@@ -103,8 +103,10 @@ class Equipment(SQLModel, table=True):
 
 class BlockchainAnchor(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    event_hash: str = Field(index=True, unique=True)
+    entity_type: str = Field(index=True)
+    entity_id: int = Field(index=True)
+    hash_value: str = Field(index=True)
     backend: str
-    reference: str
+    tx_id: str
     anchored_at: datetime = Field(default_factory=utcnow)
     payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))

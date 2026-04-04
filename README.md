@@ -51,6 +51,46 @@ Guiding rules:
 - `scripts/plc_simulator.py`: mock PLC telemetry loop
 - `docker-compose.yml`: API, PostgreSQL, and simulator
 
+## Blockchain Layer
+
+The MES uses blockchain anchoring as a verification layer for ALCOA++-style integrity:
+
+- Full MES records stay in the database
+- Only SHA-256 hashes of critical records are anchored
+- Approved recipe versions are anchored
+- Completed batch records are anchored
+- Verification recomputes the current record hash and compares it to the stored blockchain anchor
+
+Anchors store:
+
+- `entity_type`
+- `entity_id`
+- `hash_value`
+- `tx_id`
+- `anchored_at`
+- backend metadata
+
+Default backend:
+
+- Mock blockchain adapter returning deterministic `tx_<hash-prefix>` identifiers
+
+## Verification and Tamper Demo
+
+Verification endpoints:
+
+- `GET /anchors`
+- `GET /anchors/{entity_type}/{entity_id}`
+- `POST /anchors/{entity_type}/{entity_id}/verify`
+
+Tamper demo:
+
+1. Create and complete a batch
+2. Verify the batch anchor
+3. Call `POST /demo/tamper/batches/{id}`
+4. Verify again and observe `verified: false`
+
+This demonstrates that the MES can be independently verified instead of blindly trusted.
+
 ## SQLite fallback
 
 If PostgreSQL is not available, the app falls back to local SQLite with `sqlite:///./forge_mes.db`.
@@ -68,6 +108,7 @@ Available tools:
 
 - `create_batch`
 - `start_batch`
+- `verify_anchor`
 - `log_event`
 - `record_material`
 - `list_recipes`

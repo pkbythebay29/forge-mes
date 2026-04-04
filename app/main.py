@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session, select
 
 from app.db import get_session, init_db, session_scope
-from app.models import Batch, BatchEvent, Equipment, MaterialLot, Recipe, RecipeVersion, User
+from app.models import Batch, BatchEvent, BlockchainAnchor, Equipment, MaterialLot, Recipe, RecipeVersion, User
 from app.schemas import (
     BatchCreate,
     BatchOut,
@@ -27,9 +27,12 @@ from app.schemas import (
     RecipeCreate,
     RecipeOut,
     RecipeVersionOut,
+    VerificationOut,
 )
 from app.security import hash_password, verify_signature
 from app.services import (
+    anchor_batch_record,
+    anchor_recipe_version,
     ensure_batch_status,
     equipment_metrics,
     get_batch_or_404,
@@ -38,6 +41,7 @@ from app.services import (
     get_material_or_404,
     get_recipe_or_404,
     record_event,
+    verify_anchor,
 )
 from app.websocket_manager import manager
 
@@ -48,6 +52,8 @@ STATIC_DIR = BASE_DIR / "static"
 
 def seed_data() -> None:
     with session_scope() as session:
+        recipe_to_anchor = None
+        version_to_anchor = None
         if not session.exec(select(User)).first():
             for username, full_name, password, role in [
                 ("operator", "Primary Operator", "operator123", "operator"),
@@ -78,22 +84,26 @@ def seed_data() -> None:
             recipe = Recipe(name="Demo Blend", description="Simple two-step blend recipe", created_by="qa")
             session.add(recipe)
             session.flush()
-            session.add(
-                RecipeVersion(
-                    recipe_id=recipe.id,
-                    version=1,
-                    instructions=[
-                        {"step": 1, "title": "Charge Vessel", "instruction": "Add material lots to mixer", "target_value": 100},
-                        {"step": 2, "title": "Mix", "instruction": "Mix for 15 minutes at standard speed", "target_value": 15},
-                    ],
-                    parameters={"temperature_c": 22, "speed_rpm": 120},
-                    status="approved",
-                    approved_by="qa",
-                    approved_at=datetime.now(timezone.utc),
-                    created_by="qa",
-                )
+            version = RecipeVersion(
+                recipe_id=recipe.id,
+                version=1,
+                instructions=[
+                    {"step": 1, "title": "Charge Vessel", "instruction": "Add material lots to mixer", "target_value": 100},
+                    {"step": 2, "title": "Mix", "instruction": "Mix for 15 minutes at standard speed", "target_value": 15},
+                ],
+                parameters={"temperature_c": 22, "speed_rpm": 120},
+                status="approved",
+                approved_by="qa",
+                approved_at=datetime.now(timezone.utc),
+                created_by="qa",
             )
+            session.add(version)
+            session.flush()
+            recipe_to_anchor = recipe
+            version_to_anchor = version
         session.commit()
+        if recipe_to_anchor and version_to_anchor:
+            anchor_recipe_version(session, recipe_to_anchor, version_to_anchor)
 
 
 @asynccontextmanager
@@ -203,6 +213,7 @@ def approve_recipe(recipe_id: int, payload: RecipeApprove, session: Session = De
         payload={"recipe_id": recipe.id, "recipe_version_id": version.id, "version": version.version},
         electronic_signature=True,
     )
+    anchor_recipe_version(session, recipe, version)
     return recipe_version_out(version)
 
 
@@ -298,6 +309,7 @@ async def complete_batch(batch_id: int, payload: BatchTransition, session: Sessi
         electronic_signature=True,
         comment=payload.comment,
     )
+    anchor_batch_record(session, batch)
     await manager.broadcast("events", {"kind": "batch_completed", "batch_id": batch.id, "event": EventOut.model_validate(event).model_dump()})
     return BatchOut.model_validate(batch)
 
@@ -379,6 +391,61 @@ def get_material(material_id: int, session: Session = Depends(get_session)) -> d
     }
 
 
+@app.get("/anchors")
+def list_anchors(session: Session = Depends(get_session)) -> list[dict]:
+    anchors = session.exec(select(BlockchainAnchor).order_by(BlockchainAnchor.anchored_at.desc())).all()
+    return [
+        {
+            "id": anchor.id,
+            "entity_type": anchor.entity_type,
+            "entity_id": anchor.entity_id,
+            "hash_value": anchor.hash_value,
+            "tx_id": anchor.tx_id,
+            "backend": anchor.backend,
+            "anchored_at": anchor.anchored_at,
+            "payload": anchor.payload,
+        }
+        for anchor in anchors
+    ]
+
+
+@app.get("/anchors/{entity_type}/{entity_id}", response_model=VerificationOut)
+def verify_anchored_record(entity_type: str, entity_id: int, session: Session = Depends(get_session)) -> VerificationOut:
+    anchor = session.exec(
+        select(BlockchainAnchor)
+        .where(BlockchainAnchor.entity_type == entity_type)
+        .where(BlockchainAnchor.entity_id == entity_id)
+    ).first()
+    if not anchor:
+        raise HTTPException(status_code=404, detail="Anchor not found")
+    return VerificationOut(**verify_anchor(session, anchor))
+
+
+@app.post("/anchors/{entity_type}/{entity_id}/verify", response_model=VerificationOut)
+def verify_anchored_record_post(entity_type: str, entity_id: int, session: Session = Depends(get_session)) -> VerificationOut:
+    return verify_anchored_record(entity_type, entity_id, session)
+
+
+@app.post("/demo/tamper/batches/{batch_id}")
+def tamper_batch_record(batch_id: int, session: Session = Depends(get_session)) -> dict:
+    batch = get_batch_or_404(session, batch_id)
+    batch.product_name = f"{batch.product_name} (tampered)"
+    session.add(batch)
+    session.commit()
+    session.refresh(batch)
+    anchor = session.exec(
+        select(BlockchainAnchor)
+        .where(BlockchainAnchor.entity_type == "batch")
+        .where(BlockchainAnchor.entity_id == batch.id)
+    ).first()
+    verification = verify_anchor(session, anchor) if anchor else None
+    return {
+        "message": "Batch record modified for tamper-detection demo",
+        "batch": BatchOut.model_validate(batch).model_dump(),
+        "verification": verification,
+    }
+
+
 @app.get("/equipment", response_model=list[EquipmentOut])
 def list_equipment(session: Session = Depends(get_session)) -> list[EquipmentOut]:
     result = []
@@ -420,6 +487,7 @@ def mcp_tools() -> dict:
         "tools": [
             {"name": "create_batch", "description": "Create a new manufacturing batch"},
             {"name": "start_batch", "description": "Start an existing batch with electronic signature"},
+            {"name": "verify_anchor", "description": "Verify an anchored record against its blockchain hash"},
             {"name": "log_event", "description": "Append an immutable MES event"},
             {"name": "record_material", "description": "Create a material lot or genealogy record"},
             {"name": "list_recipes", "description": "List recipe masters and latest versions"},
@@ -435,6 +503,8 @@ async def mcp_execute(tool_call: MCPToolCall, session: Session = Depends(get_ses
         return {"ok": True, "result": create_batch(BatchCreate(**args), session).model_dump()}
     if tool_call.tool == "start_batch":
         return {"ok": True, "result": (await start_batch(args["batch_id"], BatchTransition(**args["payload"]), session)).model_dump()}
+    if tool_call.tool == "verify_anchor":
+        return {"ok": True, "result": verify_anchored_record(args["entity_type"], args["entity_id"], session).model_dump()}
     if tool_call.tool == "log_event":
         return {"ok": True, "result": (await create_event(EventCreate(**args), session)).model_dump()}
     if tool_call.tool == "record_material":

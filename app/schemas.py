@@ -76,6 +76,17 @@ class MCPToolCall(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
+class VerificationOut(BaseModel):
+    entity_type: str
+    entity_id: int
+    stored_hash: str
+    recalculated_hash: str
+    verified: bool
+    tx_id: str
+    backend: str
+    payload: dict[str, Any]
+
+
 class RecipeOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

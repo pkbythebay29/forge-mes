@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
-from app.blockchain import get_anchor_service
+from app.blockchain import generate_hash, get_anchor_service, verify_record
 from app.models import Batch, BatchEvent, BlockchainAnchor, Equipment, MaterialLot, Recipe, RecipeVersion
 
 
@@ -62,22 +62,162 @@ def record_event(
     )
     session.add(event)
     session.flush()
-
-    anchor_service = get_anchor_service()
-    anchor = anchor_service.anchor(event_hash)
-    session.add(
-        BlockchainAnchor(
-            event_hash=event_hash,
-            backend=anchor.backend,
-            reference=anchor.reference,
-            payload=anchor.payload,
-        )
-    )
-    event.anchored_ref = anchor.reference
-    session.add(event)
     session.commit()
     session.refresh(event)
     return event
+
+
+def canonical_recipe_record(recipe: Recipe, version: RecipeVersion) -> dict[str, Any]:
+    return {
+        "entity_type": "recipe_version",
+        "recipe_id": recipe.id,
+        "recipe_name": recipe.name,
+        "recipe_description": recipe.description,
+        "recipe_version_id": version.id,
+        "version": version.version,
+        "status": version.status,
+        "instructions": version.instructions,
+        "parameters": version.parameters,
+        "approved_at": version.approved_at.isoformat() if version.approved_at else None,
+        "approved_by": version.approved_by,
+        "created_by": version.created_by,
+        "created_at": version.created_at.isoformat(),
+    }
+
+
+def canonical_batch_record(session: Session, batch: Batch) -> dict[str, Any]:
+    recipe = get_recipe_or_404(session, batch.recipe_id)
+    version = session.get(RecipeVersion, batch.recipe_version_id)
+    if not version:
+        raise HTTPException(status_code=404, detail="Recipe version not found")
+    materials = session.exec(select(MaterialLot).where(MaterialLot.batch_id == batch.id).order_by(MaterialLot.id)).all()
+    events = session.exec(select(BatchEvent).where(BatchEvent.batch_id == batch.id).order_by(BatchEvent.id)).all()
+    return {
+        "entity_type": "batch_record",
+        "batch_id": batch.id,
+        "batch_number": batch.batch_number,
+        "status": batch.status,
+        "product_name": batch.product_name,
+        "planned_quantity": batch.planned_quantity,
+        "actual_quantity": batch.actual_quantity,
+        "current_step": batch.current_step,
+        "recipe": canonical_recipe_record(recipe, version),
+        "materials": [
+            {
+                "id": material.id,
+                "material_code": material.material_code,
+                "lot_number": material.lot_number,
+                "quantity": material.quantity,
+                "unit": material.unit,
+                "status": material.status,
+                "parent_lot_id": material.parent_lot_id,
+            }
+            for material in materials
+        ],
+        "events": [
+            {
+                "id": event.id,
+                "event_type": event.event_type,
+                "actor": event.actor,
+                "action": event.action,
+                "payload": event.payload,
+                "electronic_signature": event.electronic_signature,
+                "comment": event.comment,
+                "previous_hash": event.previous_hash,
+                "event_hash": event.event_hash,
+                "created_at": event.created_at.isoformat(),
+            }
+            for event in events
+        ],
+        "started_at": batch.started_at.isoformat() if batch.started_at else None,
+        "completed_at": batch.completed_at.isoformat() if batch.completed_at else None,
+        "created_by": batch.created_by,
+        "created_at": batch.created_at.isoformat(),
+    }
+
+
+def upsert_anchor(
+    session: Session,
+    *,
+    entity_type: str,
+    entity_id: int,
+    record_data: dict[str, Any],
+) -> BlockchainAnchor:
+    hash_value = generate_hash(record_data)
+    anchor_service = get_anchor_service()
+    result = anchor_service.anchor(hash_value)
+    existing = session.exec(
+        select(BlockchainAnchor)
+        .where(BlockchainAnchor.entity_type == entity_type)
+        .where(BlockchainAnchor.entity_id == entity_id)
+    ).first()
+    if existing:
+        existing.hash_value = hash_value
+        existing.backend = result.backend
+        existing.tx_id = result.tx_id
+        existing.anchored_at = utcnow()
+        existing.payload = {**result.payload, "record_preview": record_data.get("entity_type")}
+        session.add(existing)
+        session.commit()
+        session.refresh(existing)
+        return existing
+
+    anchor = BlockchainAnchor(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        hash_value=hash_value,
+        backend=result.backend,
+        tx_id=result.tx_id,
+        payload={**result.payload, "record_preview": record_data.get("entity_type")},
+    )
+    session.add(anchor)
+    session.commit()
+    session.refresh(anchor)
+    return anchor
+
+
+def anchor_recipe_version(session: Session, recipe: Recipe, version: RecipeVersion) -> BlockchainAnchor:
+    return upsert_anchor(
+        session,
+        entity_type="recipe_version",
+        entity_id=version.id,
+        record_data=canonical_recipe_record(recipe, version),
+    )
+
+
+def anchor_batch_record(session: Session, batch: Batch) -> BlockchainAnchor:
+    return upsert_anchor(
+        session,
+        entity_type="batch",
+        entity_id=batch.id,
+        record_data=canonical_batch_record(session, batch),
+    )
+
+
+def verify_anchor(session: Session, anchor: BlockchainAnchor) -> dict[str, Any]:
+    if anchor.entity_type == "batch":
+        batch = get_batch_or_404(session, anchor.entity_id)
+        record_data = canonical_batch_record(session, batch)
+    elif anchor.entity_type == "recipe_version":
+        version = session.get(RecipeVersion, anchor.entity_id)
+        if not version:
+            raise HTTPException(status_code=404, detail="Recipe version not found")
+        recipe = get_recipe_or_404(session, version.recipe_id)
+        record_data = canonical_recipe_record(recipe, version)
+    else:
+        raise HTTPException(status_code=404, detail="Unsupported anchored entity")
+
+    recalculated_hash = generate_hash(record_data)
+    return {
+        "entity_type": anchor.entity_type,
+        "entity_id": anchor.entity_id,
+        "stored_hash": anchor.hash_value,
+        "recalculated_hash": recalculated_hash,
+        "verified": verify_record(record_data, anchor.hash_value),
+        "tx_id": anchor.tx_id,
+        "backend": anchor.backend,
+        "payload": anchor.payload,
+    }
 
 
 def get_latest_recipe_version(session: Session, recipe_id: int) -> RecipeVersion:
