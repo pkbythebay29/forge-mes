@@ -1,0 +1,39 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://forge:forge@db:5432/forge_mes
+      BLOCKCHAIN_BACKEND: mock
+    depends_on:
+      db:
+        condition: service_healthy
+
+  plc-simulator:
+    build: .
+    command: ["python", "scripts/plc_simulator.py"]
+    environment:
+      FORGE_MES_URL: http://api:8000
+      FORGE_MES_EQUIPMENT_ID: "1"
+    depends_on:
+      - api
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: forge_mes
+      POSTGRES_USER: forge
+      POSTGRES_PASSWORD: forge
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forge -d forge_mes"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
