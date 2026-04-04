@@ -46,7 +46,8 @@ Open:
 - Operator UI: <http://localhost:8000/>
 - API docs: <http://localhost:8000/docs>
 - Technical guide: <http://localhost:8000/guide>
-- Tag mapping guide: <http://localhost:8000/tag-mapping>
+- Configuration page: <http://localhost:8000/configuration>
+- Batch visualizer: <http://localhost:8000/batch-visualizer>
 
 Default users:
 
@@ -148,6 +149,7 @@ The operator UI now emphasizes:
 - an AI copilot panel for next-best actions
 - visible blockchain verification status
 - industrial driver connection state
+- API-backed configuration and batch visualizer pages
 
 The agent layer does not invent hidden state. It responds from live MES context: batch status, event trail, anchor verification, equipment state, and driver connectivity.
 
@@ -156,9 +158,17 @@ The agent layer does not invent hidden state. It responds from live MES context:
 Driver endpoints:
 
 - `GET /drivers`
+- `GET /drivers/{driver_type}/config`
+- `PUT /drivers/{driver_type}/config`
+- `PUT /drivers/{driver_type}/tag-map`
 - `POST /drivers/opcua/connect`
 - `POST /drivers/mqtt/connect`
 - `POST /drivers/{driver_type}/publish`
+
+Batch analysis endpoints:
+
+- `GET /analytics/batches`
+- `GET /batches/{id}/timeline`
 
 These drivers are intentionally lightweight and pluggable. They are designed to show where plant connectivity fits in the architecture without forcing the MES to depend on a single vendor stack.
 

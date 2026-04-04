@@ -23,7 +23,9 @@ from app.schemas import (
     BatchOut,
     BatchTransition,
     DriverConnect,
+    DriverConfigUpdate,
     DriverPublish,
+    DriverTagMapUpdate,
     EquipmentOut,
     EquipmentTelemetry,
     EventCreate,
@@ -189,7 +191,17 @@ def guide_page() -> FileResponse:
 
 @app.get("/tag-mapping")
 def tag_mapping_page() -> FileResponse:
-    return FileResponse(STATIC_DIR / "tag-mapping.html")
+    return FileResponse(STATIC_DIR / "configuration.html")
+
+
+@app.get("/configuration")
+def configuration_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "configuration.html")
+
+
+@app.get("/batch-visualizer")
+def batch_visualizer_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "batch-visualizer.html")
 
 
 @app.get("/health")
@@ -623,6 +635,44 @@ def get_driver_tag_map(driver_type: str) -> dict:
     return {"driver_type": driver.driver_type, "tag_map": driver.tag_map, "status": driver.status, "endpoint": driver.endpoint}
 
 
+@app.get("/drivers/{driver_type}/config")
+def get_driver_config(driver_type: str) -> dict:
+    try:
+        driver = driver_registry.get(driver_type)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    return {
+        "driver_type": driver.driver_type,
+        "name": driver.name,
+        "protocol": driver.protocol,
+        "endpoint": driver.endpoint,
+        "status": driver.status,
+        "metadata": driver.metadata,
+        "tag_map": driver.tag_map,
+    }
+
+
+@app.put("/drivers/{driver_type}/config")
+def update_driver_config(driver_type: str, payload: DriverConfigUpdate) -> dict:
+    try:
+        driver = driver_registry.update_config(driver_type, payload.endpoint, payload.metadata)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    return driver_out(driver)
+
+
+@app.put("/drivers/{driver_type}/tag-map")
+def update_driver_tag_map(driver_type: str, payload: DriverTagMapUpdate) -> dict:
+    try:
+        driver = driver_registry.replace_tag_map(
+            driver_type,
+            [entry.model_dump() for entry in payload.tag_map],
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    return driver_out(driver)
+
+
 @app.post("/drivers/{driver_type}/connect")
 def connect_driver(driver_type: str, payload: DriverConnect) -> dict:
     try:
@@ -686,6 +736,85 @@ def list_equipment(session: Session = Depends(get_session)) -> list[EquipmentOut
     for equipment in session.exec(select(Equipment)).all():
         result.append(EquipmentOut.model_validate({**equipment.model_dump(), **equipment_metrics(equipment)}))
     return result
+
+
+@app.get("/batches/{batch_id}/timeline")
+def batch_timeline(batch_id: int, session: Session = Depends(get_session)) -> dict:
+    batch = get_batch_or_404(session, batch_id)
+    recipe = get_recipe_or_404(session, batch.recipe_id)
+    version = session.get(RecipeVersion, batch.recipe_version_id)
+    events = session.exec(select(BatchEvent).where(BatchEvent.batch_id == batch.id).order_by(BatchEvent.created_at)).all()
+    anchor = session.exec(
+        select(BlockchainAnchor)
+        .where(BlockchainAnchor.entity_type == "batch")
+        .where(BlockchainAnchor.entity_id == batch.id)
+    ).first()
+    verification = verify_anchor(session, anchor) if anchor else None
+    timeline = []
+    for index, event in enumerate(events, start=1):
+        payload = event.payload or {}
+        timeline.append(
+            {
+                "sequence": index,
+                "timestamp": event.created_at.isoformat(),
+                "event_type": event.event_type,
+                "action": event.action,
+                "actor": event.actor,
+                "step_title": payload.get("step_title"),
+                "observed_value": payload.get("observed_value"),
+                "event_hash": event.event_hash,
+                "previous_hash": event.previous_hash,
+                "electronic_signature": event.electronic_signature,
+            }
+        )
+    return {
+        "batch": BatchOut.model_validate(batch).model_dump(),
+        "recipe": RecipeOut.model_validate(recipe).model_dump(),
+        "recipe_version": recipe_version_out(version).model_dump() if version else None,
+        "timeline": timeline,
+        "verification": verification,
+    }
+
+
+@app.get("/analytics/batches")
+def batch_history_table(session: Session = Depends(get_session)) -> list[dict]:
+    batches = session.exec(select(Batch).order_by(Batch.created_at.desc())).all()
+    summaries = []
+    for batch in batches:
+        recipe = get_recipe_or_404(session, batch.recipe_id)
+        version = session.get(RecipeVersion, batch.recipe_version_id)
+        materials = session.exec(select(MaterialLot).where(MaterialLot.batch_id == batch.id)).all()
+        events = session.exec(select(BatchEvent).where(BatchEvent.batch_id == batch.id)).all()
+        anchor = session.exec(
+            select(BlockchainAnchor)
+            .where(BlockchainAnchor.entity_type == "batch")
+            .where(BlockchainAnchor.entity_id == batch.id)
+        ).first()
+        verification = verify_anchor(session, anchor) if anchor else None
+        summaries.append(
+            {
+                "batch_id": batch.id,
+                "batch_number": batch.batch_number,
+                "status": batch.status,
+                "product_name": batch.product_name,
+                "recipe_id": batch.recipe_id,
+                "recipe_name": recipe.name,
+                "recipe_version_id": batch.recipe_version_id,
+                "recipe_version": version.version if version else None,
+                "planned_quantity": batch.planned_quantity,
+                "actual_quantity": batch.actual_quantity,
+                "current_step": batch.current_step,
+                "material_count": len(materials),
+                "event_count": len(events),
+                "created_by": batch.created_by,
+                "created_at": batch.created_at.isoformat(),
+                "started_at": batch.started_at.isoformat() if batch.started_at else None,
+                "completed_at": batch.completed_at.isoformat() if batch.completed_at else None,
+                "anchor_tx_id": anchor.tx_id if anchor else None,
+                "anchor_verified": verification["verified"] if verification else None,
+            }
+        )
+    return summaries
 
 
 @app.post("/equipment/{equipment_id}/telemetry", response_model=EquipmentOut)

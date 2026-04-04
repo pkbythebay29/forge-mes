@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forge MES Batch Visualizer</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="layout guide-layout">
+    <section class="guide-header">
+      <p class="eyebrow">Batch Visualizer</p>
+      <h1 class="guide-title">Timeline, SQL history, and audit cross-reference</h1>
+      <div class="topbar">
+        <a class="nav-link" href="/">Operator Workspace</a>
+        <a class="nav-link" href="/configuration">Configuration</a>
+        <a class="nav-link" href="/guide">Technical Guide</a>
+      </div>
+    </section>
+
+    <section class="status-strip">
+      <div id="visualizer-status" class="status-message">Refresh the history table to read batches from the SQL database and load one batch to visualize its execution timeline.</div>
+    </section>
+
+    <section class="guide-grid">
+      <article class="card wide-card">
+        <h2>Batch History From SQL</h2>
+        <div class="toolbar-row">
+          <button id="refresh-history">Refresh History</button>
+          <label>Batch ID
+            <input id="timeline-batch-id" type="number" placeholder="Select from the table below">
+          </label>
+          <button id="load-timeline">Load Timeline</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="history-table">
+            <thead>
+              <tr>
+                <th>Batch</th>
+                <th>Status</th>
+                <th>Recipe</th>
+                <th>Version</th>
+                <th>Materials</th>
+                <th>Events</th>
+                <th>Anchor</th>
+                <th>Created</th>
+                <th>Use</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="card wide-card">
+        <h2>Execution Timeline</h2>
+        <div id="timeline-summary" class="explain-panel">Load a batch to visualize step order, timestamps, and blockchain verification status.</div>
+        <div id="timeline-graph" class="timeline-graph"></div>
+      </article>
+
+      <article class="card wide-card">
+        <h2>Audit Cross Reference</h2>
+        <div class="table-wrap">
+          <table class="data-table" id="timeline-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Action</th>
+                <th>Actor</th>
+                <th>Step</th>
+                <th>Signed</th>
+                <th>Hash</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+  </main>
+  <script src="/static/batch-visualizer.js"></script>
+</body>
+</html>

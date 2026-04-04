@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forge MES Configuration</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="layout guide-layout">
+    <section class="guide-header">
+      <p class="eyebrow">Configuration</p>
+      <h1 class="guide-title">Industrial connectivity and tag binding</h1>
+      <div class="topbar">
+        <a class="nav-link" href="/">Operator Workspace</a>
+        <a class="nav-link" href="/guide">Technical Guide</a>
+        <a class="nav-link" href="/batch-visualizer">Batch Visualizer</a>
+      </div>
+    </section>
+
+    <section class="status-strip">
+      <div id="config-status" class="status-message">Configuration pages use Forge MES APIs only, so the same backend can support other front ends.</div>
+    </section>
+
+    <section class="guide-grid">
+      <article class="card wide-card">
+        <h2>Frontend Contract</h2>
+        <p>This page reads and writes connectivity settings entirely through REST APIs.</p>
+        <p><code>GET /drivers/{driver_type}/config</code></p>
+        <p><code>PUT /drivers/{driver_type}/config</code></p>
+        <p><code>PUT /drivers/{driver_type}/tag-map</code></p>
+      </article>
+
+      <article class="card wide-card">
+        <h2>OPC UA Configuration</h2>
+        <div class="config-grid">
+          <label>Server Endpoint <input id="opcua-endpoint" placeholder="opc.tcp://localhost:4840"></label>
+          <label>Namespace <input id="opcua-namespace" placeholder="2"></label>
+          <label>Security Mode <input id="opcua-security-mode" placeholder="None"></label>
+          <label>Authentication <input id="opcua-authentication" placeholder="anonymous"></label>
+          <label>Username <input id="opcua-username" placeholder="Optional"></label>
+          <label>Password <input id="opcua-password" placeholder="Optional" type="password"></label>
+        </div>
+        <div class="actions two-col compact-actions">
+          <button id="save-opcua-config">Save OPC UA Config</button>
+          <button id="connect-opcua-config">Connect OPC UA</button>
+        </div>
+      </article>
+
+      <article class="card wide-card">
+        <h2>OPC UA Workspace Tag Bindings</h2>
+        <p class="tiny">These are the MES fields surfaced in the operator workspace and their current OPC UA tags.</p>
+        <div class="table-wrap">
+          <table class="data-table" id="opcua-tag-table">
+            <thead>
+              <tr>
+                <th>MES Field</th>
+                <th>Source Tag</th>
+                <th>Type</th>
+                <th>Direction</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="actions two-col compact-actions">
+          <button id="add-opcua-tag">Add OPC UA Tag</button>
+          <button id="save-opcua-tags">Save OPC UA Tag Map</button>
+        </div>
+      </article>
+
+      <article class="card wide-card">
+        <h2>MQTT Configuration</h2>
+        <div class="config-grid">
+          <label>Broker URL <input id="mqtt-endpoint" placeholder="mqtt://localhost:1883/forge-mes"></label>
+          <label>Client ID <input id="mqtt-client-id" placeholder="forge-mes-demo"></label>
+          <label>QoS <input id="mqtt-qos" placeholder="1"></label>
+          <label>Username <input id="mqtt-username" placeholder="Optional"></label>
+          <label>Password <input id="mqtt-password" placeholder="Optional" type="password"></label>
+        </div>
+        <div class="actions two-col compact-actions">
+          <button id="save-mqtt-config">Save MQTT Config</button>
+          <button id="connect-mqtt-config">Connect MQTT</button>
+        </div>
+      </article>
+
+      <article class="card wide-card">
+        <h2>MQTT Tag Bindings</h2>
+        <div class="table-wrap">
+          <table class="data-table" id="mqtt-tag-table">
+            <thead>
+              <tr>
+                <th>MES Field</th>
+                <th>Topic</th>
+                <th>Type</th>
+                <th>Direction</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="actions two-col compact-actions">
+          <button id="add-mqtt-tag">Add MQTT Tag</button>
+          <button id="save-mqtt-tags">Save MQTT Tag Map</button>
+        </div>
+      </article>
+    </section>
+  </main>
+  <script src="/static/configuration.js"></script>
+</body>
+</html>

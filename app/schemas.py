@@ -80,6 +80,23 @@ class DriverConnect(BaseModel):
     endpoint: Optional[str] = None
 
 
+class DriverConfigUpdate(BaseModel):
+    endpoint: Optional[str] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DriverTagMapEntry(BaseModel):
+    source_tag: str
+    mes_field: str
+    type: str = "string"
+    direction: str = "read"
+    meaning: str = ""
+
+
+class DriverTagMapUpdate(BaseModel):
+    tag_map: list[DriverTagMapEntry] = Field(default_factory=list)
+
+
 class DriverPublish(BaseModel):
     topic: str
     payload: dict[str, Any] = Field(default_factory=dict)
