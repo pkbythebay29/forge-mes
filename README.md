@@ -16,6 +16,52 @@ It demonstrates:
 - Mock PLC simulation
 - Docker-first deployment
 
+## Quick Start
+
+Try the full demonstrator in a few minutes:
+
+### Option 1: Docker
+
+```bash
+docker compose up --build
+```
+
+### Option 2: Local Python
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python -m uvicorn app.main:app --reload
+```
+
+Optional: run the mock PLC simulator in a second terminal
+
+```bash
+python scripts/plc_simulator.py
+```
+
+Open:
+
+- Operator UI: <http://localhost:8000/>
+- API docs: <http://localhost:8000/docs>
+- Technical guide: <http://localhost:8000/guide>
+- Tag mapping guide: <http://localhost:8000/tag-mapping>
+
+Default users:
+
+- `operator` / `operator123`
+- `qa` / `qa123`
+- `agent` / `agent123`
+
+Suggested demo flow:
+
+1. Create a batch from the approved `Demo Blend` recipe.
+2. Start the batch and log all 5 recipe steps.
+3. Record a material lot and review the genealogy context.
+4. Complete the batch and click `Verify Anchor`.
+5. Run `Tamper Demo` and verify again to see the hash mismatch.
+
 ## Run
 
 ```bash
