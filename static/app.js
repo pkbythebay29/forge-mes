@@ -91,8 +91,9 @@ function renderGenealogySummary(payload) {
   if (!box) return;
   if (!payload?.batch || !payload?.recipe || !payload?.recipe_version) {
     box.innerHTML = `
-      <strong>Genealogy Context</strong>
-      <p>Load a batch to see how recorded material lots connect to the batch, recipe, and approved recipe version.</p>
+      <strong>Traceability Context</strong>
+      <p>Load or create a batch first, then record the lots consumed by that batch.</p>
+      <p>Forge will connect each lot to the active batch, recipe, approved version, and audit trail.</p>
     `;
     return;
   }
@@ -101,11 +102,12 @@ function renderGenealogySummary(payload) {
     ? payload.materials.map((material) => `${material.lot_number} (${material.material_code})`).join(", ")
     : "No material lots recorded yet.";
   box.innerHTML = `
-    <strong>Genealogy Context</strong>
+    <strong>Traceability Context</strong>
     <p><strong>Batch</strong>: ${payload.batch.batch_number}</p>
     <p><strong>Recipe</strong>: ${payload.recipe.name} (ID ${payload.recipe.id})</p>
     <p><strong>Approved Version</strong>: v${payload.recipe_version.version} (Version ID ${payload.recipe_version.id})</p>
     <p><strong>Material Lots</strong>: ${materialCount}</p>
+    <p>Use this section to add consumed lots before or during execution. Completed batches stay locked for traceability.</p>
     <p>${lots}</p>
   `;
 }
@@ -133,7 +135,7 @@ function updateActionAvailability(batch) {
   setButtonState("start-batch", created);
   setButtonState("complete-batch", completeReady);
   setButtonState("log-step", stepReady);
-  setButtonState("record-material", hasBatch && !completed && batch.status !== "created");
+  setButtonState("record-material", hasBatch && !completed);
   setButtonState("verify-batch", completed);
   setButtonState("export-batch-pdf", hasBatch);
   setButtonState("tamper-batch", completed);
