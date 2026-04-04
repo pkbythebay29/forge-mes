@@ -487,10 +487,20 @@ async def create_material(payload: MaterialCreate, session: Session = Depends(ge
     existing = session.exec(select(MaterialLot).where(MaterialLot.lot_number == payload.lot_number)).first()
     if existing:
         raise HTTPException(status_code=409, detail="Lot number already exists. Use a new lot number for genealogy tracking.")
+    recipe_context = None
     if payload.batch_id:
         batch = get_batch_or_404(session, payload.batch_id)
         if batch.status == "completed":
             raise HTTPException(status_code=409, detail="Cannot record new material against a completed batch.")
+        recipe = get_recipe_or_404(session, batch.recipe_id)
+        recipe_version = session.get(RecipeVersion, batch.recipe_version_id)
+        recipe_context = {
+            "recipe_id": batch.recipe_id,
+            "recipe_name": recipe.name,
+            "recipe_version_id": batch.recipe_version_id,
+            "recipe_version": recipe_version.version if recipe_version else None,
+            "batch_number": batch.batch_number,
+        }
     material = MaterialLot(
         material_code=payload.material_code,
         lot_number=payload.lot_number,
@@ -510,7 +520,12 @@ async def create_material(payload: MaterialCreate, session: Session = Depends(ge
         event_type="material",
         actor=payload.actor,
         action="material_recorded",
-        payload={"material_id": material.id, "lot_number": material.lot_number, "parent_lot_id": material.parent_lot_id},
+        payload={
+            "material_id": material.id,
+            "lot_number": material.lot_number,
+            "parent_lot_id": material.parent_lot_id,
+            "recipe_context": recipe_context,
+        },
     )
     await manager.broadcast("events", {"kind": "material_recorded", "batch_id": payload.batch_id, "event": EventOut.model_validate(event).model_dump()})
     return MaterialOut.model_validate(material)
@@ -521,10 +536,21 @@ def get_material(material_id: int, session: Session = Depends(get_session)) -> d
     material = get_material_or_404(session, material_id)
     parent = session.get(MaterialLot, material.parent_lot_id) if material.parent_lot_id else None
     children = session.exec(select(MaterialLot).where(MaterialLot.parent_lot_id == material.id)).all()
+    batch = get_batch_or_404(session, material.batch_id) if material.batch_id else None
+    recipe = get_recipe_or_404(session, batch.recipe_id) if batch else None
+    recipe_version = session.get(RecipeVersion, batch.recipe_version_id) if batch else None
     return {
         "material": MaterialOut.model_validate(material).model_dump(),
         "parent": MaterialOut.model_validate(parent).model_dump() if parent else None,
         "children": [MaterialOut.model_validate(child).model_dump() for child in children],
+        "recipe_context": {
+            "recipe_id": batch.recipe_id,
+            "recipe_name": recipe.name,
+            "recipe_version_id": batch.recipe_version_id,
+            "recipe_version": recipe_version.version if recipe_version else None,
+            "batch_id": batch.id,
+            "batch_number": batch.batch_number,
+        } if batch and recipe else None,
     }
 
 

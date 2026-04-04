@@ -57,7 +57,7 @@ function renderBatchSummary(batch) {
 
 function updateProductFromRecipe() {
   const recipe = availableRecipes.find((item) => item.recipe.id === Number(el("recipe-id").value));
-  if (recipe && !el("product-name").dataset.userEdited) {
+  if (recipe && el("product-name").dataset.userEdited !== "true") {
     el("product-name").value = recipe.recipe.name;
   }
 }
@@ -103,11 +103,16 @@ function renderGenealogySummary(payload) {
   box.innerHTML = `
     <strong>Genealogy Context</strong>
     <p><strong>Batch</strong>: ${payload.batch.batch_number}</p>
-    <p><strong>Recipe</strong>: ${payload.recipe.name}</p>
-    <p><strong>Approved Version</strong>: v${payload.recipe_version.version}</p>
+    <p><strong>Recipe</strong>: ${payload.recipe.name} (ID ${payload.recipe.id})</p>
+    <p><strong>Approved Version</strong>: v${payload.recipe_version.version} (Version ID ${payload.recipe_version.id})</p>
     <p><strong>Material Lots</strong>: ${materialCount}</p>
     <p>${lots}</p>
   `;
+}
+
+function resetProductToRecipeSelection() {
+  el("product-name").dataset.userEdited = "false";
+  updateProductFromRecipe();
 }
 
 function setButtonState(id, enabled) {
@@ -204,6 +209,7 @@ async function loadBatch() {
   el("recipe-id").value = String(payload.recipe.id);
   renderRecipeVersions(payload.recipe.id);
   el("recipe-version-id").value = String(payload.recipe_version.id);
+  el("product-name").dataset.userEdited = "false";
   el("product-name").value = payload.batch.product_name;
   renderBatchSummary(payload.batch);
   renderInstructions(payload.recipe_version.instructions);
@@ -233,6 +239,7 @@ el("create-batch").onclick = async () => {
     currentBatch = payload;
     setStatus(`Created batch ${payload.batch_number}.`, "success");
     await suggestNextBatchNumber();
+    resetProductToRecipeSelection();
     await loadBatch();
   } catch (error) {
     setStatus(`Create Batch failed: ${error.message}`, "error");
@@ -324,6 +331,7 @@ el("record-material").onclick = async () => {
 
 el("recipe-id").onchange = () => {
   renderRecipeVersions(el("recipe-id").value);
+  resetProductToRecipeSelection();
   addUiAuditNotice("recipe_selection_changed", "Recipe selection changed in the form. No MES record was changed.");
   setStatus("Recipe selection updated. Create Batch will use the selected approved recipe version.");
 };
@@ -460,4 +468,6 @@ suggestNextBatchNumber().catch(() => {});
 loadRecipes().catch(() => {
   setStatus("Recipe list could not be loaded.", "error");
 });
-loadBatch().catch(() => {});
+loadBatch().catch(() => {
+  resetProductToRecipeSelection();
+});
