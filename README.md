@@ -102,7 +102,6 @@ The operator UI now emphasizes:
 - an AI copilot panel for next-best actions
 - visible blockchain verification status
 - industrial driver connection state
-- market comparison cards showing how Forge differs from packaged MES suites
 
 The agent layer does not invent hidden state. It responds from live MES context: batch status, event trail, anchor verification, equipment state, and driver connectivity.
 

@@ -167,43 +167,6 @@ def healthcheck() -> dict:
     return {"status": "ok"}
 
 
-@app.get("/market/compare")
-def market_compare() -> dict:
-    return {
-        "headline": "Forge MES is built as a transparent, agent-ready verification layer rather than a closed enterprise suite.",
-        "comparisons": [
-            {
-                "vendor": "Forge MES",
-                "positioning": "Open-source, minimal, agent-ready MES with explicit blockchain verification and lightweight drivers.",
-                "best_for": "Teams that want to understand, extend, and validate MES behavior directly.",
-                "difference": "Shows the audit chain, agent actions, and integrity proof in one operator-facing workflow.",
-            },
-            {
-                "vendor": "Siemens MES and trusted traceability",
-                "positioning": "Enterprise-scale traceability and manufacturing execution platform.",
-                "best_for": "Large organizations standardizing across complex operations.",
-                "difference": "Forge is intentionally smaller, easier to inspect, and more explicit about verification as code.",
-                "source": "https://www.siemens.com/en-us/solutions/manufacturing-execution-system-mes/",
-            },
-            {
-                "vendor": "Rockwell FactoryTalk PharmaSuite",
-                "positioning": "Life-sciences focused MES with strong electronic batch record workflows.",
-                "best_for": "Regulated plants that need deep packaged functionality and vendor support.",
-                "difference": "Forge trades packaged depth for openness, pluggability, and developer-friendly agent interfaces.",
-                "source": "https://www.rockwellautomation.com/en-ua/company/news/case-studies/biopharmaceutical-mes.html",
-            },
-            {
-                "vendor": "Tulip frontline platform",
-                "positioning": "Composable frontline operations apps with low-code workflows and AI emphasis.",
-                "best_for": "Teams that want fast app composition around shop-floor work.",
-                "difference": "Forge is more MES-specific, with stronger native emphasis on eBR integrity and blockchain-style proof.",
-                "source": "https://tulip.co/",
-            },
-        ],
-        "insight": "The market trend is toward composability, interoperability, and AI assistance. Forge pushes that trend further by making verification and agent behavior first-class product features.",
-    }
-
-
 @app.post("/recipes", response_model=RecipeVersionOut)
 def create_recipe(payload: RecipeCreate, session: Session = Depends(get_session)) -> RecipeVersionOut:
     recipe = session.exec(select(Recipe).where(Recipe.name == payload.name)).first()

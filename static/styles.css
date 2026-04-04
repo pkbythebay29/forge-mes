@@ -121,10 +121,6 @@ h1 {
   grid-column: span 8;
 }
 
-.market-card {
-  grid-column: span 12;
-}
-
 label {
   display: block;
   margin-bottom: 10px;
@@ -199,23 +195,6 @@ button.secondary {
   border-bottom: 1px solid rgba(123, 202, 181, 0.12);
 }
 
-.compare-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 16px;
-}
-
-.compare-item {
-  border-bottom: none;
-  padding: 14px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.compare-item a {
-  color: var(--gold);
-}
-
 hr {
   border: none;
   border-top: 1px solid rgba(123, 202, 181, 0.12);
@@ -230,9 +209,6 @@ hr {
 
   .card,
   .wide-card,
-  .market-card {
-    grid-column: span 1;
-  }
 }
 
 @media (max-width: 820px) {

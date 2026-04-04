@@ -63,19 +63,6 @@ async function refreshDrivers() {
   `).join("");
 }
 
-async function refreshMarketCompare() {
-  const market = await api("/market/compare");
-  el("market-compare").innerHTML = market.comparisons.map((item) => `
-    <div class="compare-item">
-      <strong>${item.vendor}</strong><br>
-      ${item.positioning}<br><br>
-      <em>Best for:</em> ${item.best_for}<br><br>
-      <em>Forge difference:</em> ${item.difference}
-      ${item.source ? `<br><br><a href="${item.source}" target="_blank" rel="noreferrer">Source</a>` : ""}
-    </div>
-  `).join("");
-}
-
 async function loadBatch() {
   const batchId = el("active-batch-id").value;
   const payload = await api(`/batches/${batchId}`);
@@ -220,5 +207,4 @@ equipmentSocket.onmessage = () => refreshEquipment();
 refreshEquipment();
 refreshAnchors();
 refreshDrivers();
-refreshMarketCompare();
 loadBatch().catch(() => {});
