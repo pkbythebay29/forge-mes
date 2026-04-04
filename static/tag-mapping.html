@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forge MES Tag Mapping</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="layout guide-layout">
+    <section class="guide-header">
+      <p class="eyebrow">Industrial Tag Mapping</p>
+      <h1 class="guide-title">How OPC UA and MQTT source tags map into batch execution</h1>
+      <div class="topbar">
+        <a class="nav-link" href="/">Back to Operator Workspace</a>
+        <a class="nav-link" href="/guide">Open Technical Guide</a>
+      </div>
+    </section>
+
+    <section class="guide-grid">
+      <article class="card wide-card">
+        <h2>What Connected Means</h2>
+        <p>When you click connect for OPC UA or MQTT in Forge, the demonstrator marks that driver endpoint as active and exposes the tag mappings required to translate industrial source data into MES fields.</p>
+        <p>In a production deployment, this is where browse, subscribe, and value conversion logic would begin streaming source data into the batch, material, or equipment context.</p>
+      </article>
+
+      <article class="card wide-card">
+        <h2>Manual OPC UA Server Configuration</h2>
+        <p>To configure an OPC UA source manually, provide:</p>
+        <p><code>Server endpoint: opc.tcp://your-server:4840</code></p>
+        <p><code>Security mode: None / Sign / SignAndEncrypt</code></p>
+        <p><code>Namespace index: for example 2</code></p>
+        <p><code>Authentication: anonymous or username/password</code></p>
+        <p>In this demonstrator, the driver stores the endpoint and tag mapping definition so the MES knows which source nodes should drive which batch fields.</p>
+      </article>
+
+      <article class="card">
+        <h2>OPC UA Mapping Examples</h2>
+        <p><code>ns=2;s=Batch.Id -> batch.batch_number</code></p>
+        <p><code>ns=2;s=Batch.Status -> batch.status</code></p>
+        <p><code>ns=2;s=Batch.StartCommand -> batch.start_command</code></p>
+        <p><code>ns=2;s=Batch.StopCommand -> batch.stop_command</code></p>
+        <p><code>ns=2;s=Batch.RecipeName -> recipe.name</code></p>
+        <p><code>ns=2;s=Process.ActualQuantity -> batch.actual_quantity</code></p>
+        <p><code>ns=2;s=Process.StepIndex -> batch.current_step</code></p>
+        <p><code>ns=2;s=Equipment.Mixer001.Runtime -> equipment.runtime_minutes</code></p>
+      </article>
+
+      <article class="card">
+        <h2>MQTT Mapping Examples</h2>
+        <p><code>forge/line1/batch/id -> batch.batch_number</code></p>
+        <p><code>forge/line1/batch/start -> batch.start_command</code></p>
+        <p><code>forge/line1/batch/complete -> batch.complete_command</code></p>
+        <p><code>forge/line1/batch/step -> batch.current_step</code></p>
+        <p><code>forge/line1/equipment/mix001/status -> equipment.status</code></p>
+        <p><code>forge/line1/equipment/mix001/counts/good -> equipment.good_count</code></p>
+      </article>
+
+      <article class="card wide-card">
+        <h2>How To Add Tag Maps Manually</h2>
+        <p>Define each mapping with five parts:</p>
+        <p><code>source_tag</code>: the OPC UA node id or MQTT topic</p>
+        <p><code>mes_field</code>: the target MES field such as <code>batch.status</code></p>
+        <p><code>type</code>: string, integer, float, or boolean</p>
+        <p><code>direction</code>: read, write, subscribe, or publish</p>
+        <p><code>meaning</code>: what the tag controls, for example batch start, active step, actual quantity, or equipment status</p>
+      </article>
+
+      <article class="card wide-card">
+        <h2>Why Tag Mapping Matters</h2>
+        <p>MES workflows become much easier to trust when the bridge between industrial data and MES fields is explicit. Tag mapping makes it clear which source value updates which batch field, which equipment metric, and which part of the electronic batch record.</p>
+      </article>
+
+      <article class="card wide-card">
+        <h2>Live Driver Mapping API</h2>
+        <p><code>GET /drivers/opcua/tag-map</code></p>
+        <p><code>GET /drivers/mqtt/tag-map</code></p>
+        <p>These endpoints expose the current tag mapping definitions so an engineer can inspect how live industrial data would feed the MES record.</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

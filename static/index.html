@@ -9,15 +9,12 @@
 <body>
   <main class="layout">
     <section class="hero-panel">
-      <div class="hero-copy">
-        <p class="eyebrow">Agent-Ready Verifiable MES</p>
-        <h1>Operate with an AI copilot. Verify with blockchain anchors.</h1>
-        <p class="subtle">Forge MES combines operator execution, immutable event logging, industrial drivers, and record-level integrity verification in one workspace.</p>
-        <div class="hero-metrics">
-          <div class="metric-chip"><span>REST + WS</span><strong>Live</strong></div>
-          <div class="metric-chip"><span>Anchored Records</span><strong id="anchor-count">0</strong></div>
-          <div class="metric-chip"><span>Drivers</span><strong id="driver-count">2</strong></div>
+      <div class="hero-copy hero-copy-minimal">
+        <div class="brand-lockup">
+          <span class="brand-icon" aria-hidden="true"></span>
+          <p class="brand-mark">FORGE MES</p>
         </div>
+        <p class="hero-tagline">An MES demonstrator powered by AI + BlockChain</p>
       </div>
       <div class="card identity-card">
         <h2>Electronic Signature</h2>
@@ -27,9 +24,27 @@
       </div>
     </section>
 
+    <section class="topbar">
+      <div class="metric-chip"><span>REST + WS</span><strong>Live</strong></div>
+      <div class="metric-chip"><span>Anchored Records</span><strong id="anchor-count">0</strong></div>
+      <div class="metric-chip"><span>Drivers</span><strong id="driver-count">2</strong></div>
+      <a class="nav-link" href="/guide">Open Guide</a>
+      <a class="nav-link" href="/tag-mapping">Open Tag Mapping</a>
+    </section>
+
+    <section class="status-strip">
+      <div id="action-status" class="status-message">Ready. Button actions will appear here and in the audit trail when applicable.</div>
+    </section>
+
     <section class="grid primary-grid">
       <div class="card accent-card">
-        <h2>AI Operator Copilot</h2>
+        <h2>Operator Assistant</h2>
+        <label>Provider
+          <select id="agent-provider">
+            <option value="builtin">Built-in MES agent</option>
+            <option value="ollama">Local Ollama</option>
+          </select>
+        </label>
         <label>Ask the agent <input id="agent-prompt" value="What should I do next on this batch?"></label>
         <button id="ask-agent">Generate Guidance</button>
         <div id="agent-answer" class="chat-panel"></div>
@@ -39,7 +54,12 @@
       <div class="card">
         <h2>Batch Control</h2>
         <label>Batch Number <input id="batch-number" value="B-1001"></label>
-        <label>Recipe ID <input id="recipe-id" value="1" type="number"></label>
+        <label>Recipe
+          <select id="recipe-id"></select>
+        </label>
+        <label>Recipe Version
+          <select id="recipe-version-id"></select>
+        </label>
         <label>Product <input id="product-name" value="Demo Blend"></label>
         <label>Planned Qty <input id="planned-qty" value="100" type="number"></label>
         <button id="create-batch">Create Batch</button>
@@ -50,15 +70,18 @@
           <button id="start-batch">Start</button>
           <button id="complete-batch">Complete</button>
         </div>
-        <button id="verify-batch">Verify Anchor</button>
+        <div class="actions two-col">
+          <button id="verify-batch">Verify Anchor</button>
+          <button id="export-batch-pdf">Export EBR PDF</button>
+        </div>
         <button id="tamper-batch" class="secondary">Run Tamper Demo</button>
         <pre id="batch-details" class="code compact-code"></pre>
       </div>
 
       <div class="card">
         <h2>Step Execution</h2>
-        <label>Step Title <input id="step-title" value="Mix"></label>
-        <label>Observed Value <input id="step-value" value="15"></label>
+        <label>Step Title <input id="step-title" value="Line Clearance"></label>
+        <label>Observed Value <input id="step-value" value="confirmed"></label>
         <button id="log-step">Log Step Completion</button>
         <div id="instructions" class="instructions"></div>
       </div>
@@ -70,6 +93,7 @@
         <label>Quantity <input id="lot-qty" value="100" type="number"></label>
         <label>Parent Lot ID <input id="parent-lot-id" placeholder="Optional" type="number"></label>
         <button id="record-material">Record Material</button>
+        <div id="genealogy-summary" class="explain-panel"></div>
       </div>
 
       <div class="card">
@@ -79,6 +103,7 @@
           <button data-driver-connect="opcua">Connect OPC UA</button>
           <button data-driver-connect="mqtt">Connect MQTT</button>
         </div>
+        <p class="tiny">Connected means Forge has accepted the endpoint, marked the driver active, and is ready to map source tags into MES batch, material, and equipment fields.</p>
       </div>
 
       <div class="card">
@@ -91,11 +116,48 @@
         <div id="events" class="events"></div>
       </div>
 
-      <div class="card">
-        <h2>Blockchain Verification</h2>
-        <div id="verification" class="chat-panel"></div>
-      </div>
+      <section class="proof-section">
+        <div class="card wide-card proof-flow-card">
+          <h2>Batch To Proof Flow</h2>
+          <div class="flow-graph">
+            <div class="flow-node">
+              <strong>1. Operator + Equipment</strong>
+              <span>Actions, telemetry, signatures, and material usage enter the MES.</span>
+            </div>
+            <div class="flow-arrow" aria-hidden="true">-&gt;</div>
+            <div class="flow-node">
+              <strong>2. eBR + Genealogy</strong>
+              <span>Batch events, recipe context, and genealogy assemble into one verifiable record.</span>
+            </div>
+            <div class="flow-arrow" aria-hidden="true">-&gt;</div>
+            <div class="flow-node">
+              <strong>3. SHA-256 Hash</strong>
+              <span>The completed batch record is converted into a canonical hash.</span>
+            </div>
+            <div class="flow-arrow" aria-hidden="true">-&gt;</div>
+            <div class="flow-node">
+              <strong>4. Blockchain Anchor</strong>
+              <span>Only the hash and tx id are anchored, so later changes become detectable.</span>
+            </div>
+            <div class="flow-arrow" aria-hidden="true">-&gt;</div>
+            <div class="flow-node">
+              <strong>5. Verification + Export</strong>
+              <span>Forge recomputes the hash, compares it to the stored anchor, and exports the result in the eBR PDF.</span>
+            </div>
+          </div>
+        </div>
 
+        <div class="card proof-verify-card">
+          <h2>Blockchain Verification</h2>
+          <div id="verification" class="chat-panel"></div>
+          <div class="explain-panel">
+            <strong>How tamper detection works</strong>
+            <p>When a batch is completed, Forge creates a SHA-256 hash of the full electronic batch record and anchors only that hash with a transaction id. If any stored batch data changes later, the recalculated hash no longer matches the anchored hash.</p>
+            <p>The blockchain evidence is stored in the MES anchor table as entity type, entity id, stored hash, tx id, backend, and anchor metadata. The original record stays in the MES database, while the anchored hash acts as an immutable proof point.</p>
+            <p>Use <code>Verify Anchor</code> to compare the current record to the anchored blockchain hash, or export the PDF to capture the verification details in the eBR.</p>
+          </div>
+        </div>
+      </section>
     </section>
   </main>
   <script src="/static/app.js"></script>

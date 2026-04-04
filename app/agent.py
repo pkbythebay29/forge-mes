@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import json
+import os
+import urllib.error
+import urllib.request
+from datetime import datetime
 from typing import Any
 
 
@@ -49,5 +54,48 @@ def generate_agent_response(prompt: str, context: dict[str, Any]) -> dict[str, A
             "Recommendations favor traceability, electronic signatures, and anchor verification.",
             f"Prompt received: {prompt.strip() or 'No extra prompt supplied.'}",
         ],
+        "provider": "builtin",
     }
     return response
+
+
+def generate_ollama_response(prompt: str, context: dict[str, Any]) -> dict[str, Any]:
+    base_url = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
+    model = os.getenv("OLLAMA_MODEL", "llama3.1")
+    body = {
+        "model": model,
+        "stream": False,
+        "prompt": (
+            "You are an MES copilot. Be concise, actionable, and grounded in the supplied JSON context.\n"
+            f"Context:\n{json.dumps(context, indent=2, default=_json_default)}\n\n"
+            f"User prompt:\n{prompt or 'What should I do next?'}"
+        ),
+    }
+    request = urllib.request.Request(
+        f"{base_url}/api/generate",
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        return {
+            "message": payload.get("response", "").strip() or "Ollama returned an empty response.",
+            "actions": suggest_actions(context.get("batch"), context.get("anchor"), context.get("equipment", []), context.get("drivers", [])),
+            "reasoning": [
+                f"Served by local Ollama model {model}.",
+                "Fallback deterministic actions are still included below for MES safety.",
+            ],
+            "provider": "ollama",
+        }
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        fallback = generate_agent_response(prompt, context)
+        fallback["reasoning"].insert(0, f"Ollama unavailable, using builtin agent. Error: {exc}")
+        return fallback
+
+
+def _json_default(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)

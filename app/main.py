@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from io import BytesIO
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 from sqlmodel import Session, select
 
-from app.agent import generate_agent_response
+from app.agent import generate_agent_response, generate_ollama_response
 from app.db import get_session, init_db, session_scope
 from app.drivers import registry as driver_registry
 from app.models import Batch, BatchEvent, BlockchainAnchor, Equipment, MaterialLot, Recipe, RecipeVersion, User
@@ -59,6 +62,13 @@ def seed_data() -> None:
     with session_scope() as session:
         recipe_to_anchor = None
         version_to_anchor = None
+        demo_instructions = [
+            {"step": 1, "title": "Line Clearance", "instruction": "Confirm vessel, line, and labels are cleared for the batch.", "target_value": "confirmed"},
+            {"step": 2, "title": "Charge Vessel", "instruction": "Add material lots to mixer in the approved order.", "target_value": 100},
+            {"step": 3, "title": "Mix", "instruction": "Mix for 15 minutes at standard speed.", "target_value": 15},
+            {"step": 4, "title": "Sample And Verify", "instruction": "Take an in-process sample and confirm expected appearance.", "target_value": "sample passed"},
+            {"step": 5, "title": "Discharge", "instruction": "Discharge the batch to the designated container and confirm yield.", "target_value": "yield confirmed"},
+        ]
         if not session.exec(select(User)).first():
             for username, full_name, password, role in [
                 ("operator", "Primary Operator", "operator123", "operator"),
@@ -86,16 +96,13 @@ def seed_data() -> None:
             )
 
         if not session.exec(select(Recipe)).first():
-            recipe = Recipe(name="Demo Blend", description="Simple two-step blend recipe", created_by="qa")
+            recipe = Recipe(name="Demo Blend", description="Five-step demonstrator blend recipe", created_by="qa")
             session.add(recipe)
             session.flush()
             version = RecipeVersion(
                 recipe_id=recipe.id,
                 version=1,
-                instructions=[
-                    {"step": 1, "title": "Charge Vessel", "instruction": "Add material lots to mixer", "target_value": 100},
-                    {"step": 2, "title": "Mix", "instruction": "Mix for 15 minutes at standard speed", "target_value": 15},
-                ],
+                instructions=demo_instructions,
                 parameters={"temperature_c": 22, "speed_rpm": 120},
                 status="approved",
                 approved_by="qa",
@@ -106,6 +113,18 @@ def seed_data() -> None:
             session.flush()
             recipe_to_anchor = recipe
             version_to_anchor = version
+        else:
+            recipe = session.exec(select(Recipe).where(Recipe.name == "Demo Blend")).first()
+            if recipe:
+                version = get_latest_recipe_version(session, recipe.id)
+                if len(version.instructions or []) < 5:
+                    version.instructions = demo_instructions
+                    version.status = "approved"
+                    version.approved_by = version.approved_by or "qa"
+                    version.approved_at = version.approved_at or datetime.now(timezone.utc)
+                    session.add(version)
+                    recipe_to_anchor = recipe
+                    version_to_anchor = version
         session.commit()
         if recipe_to_anchor and version_to_anchor:
             anchor_recipe_version(session, recipe_to_anchor, version_to_anchor)
@@ -154,12 +173,23 @@ def driver_out(driver) -> dict:
         "last_message": driver.last_message,
         "capabilities": driver.capabilities,
         "metadata": driver.metadata,
+        "tag_map": driver.tag_map,
     }
 
 
 @app.get("/")
 def operator_ui() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/guide")
+def guide_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "guide.html")
+
+
+@app.get("/tag-mapping")
+def tag_mapping_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "tag-mapping.html")
 
 
 @app.get("/health")
@@ -240,6 +270,9 @@ def approve_recipe(recipe_id: int, payload: RecipeApprove, session: Session = De
 @app.post("/batches", response_model=BatchOut)
 def create_batch(payload: BatchCreate, session: Session = Depends(get_session)) -> BatchOut:
     recipe = get_recipe_or_404(session, payload.recipe_id)
+    existing_batch = session.exec(select(Batch).where(Batch.batch_number == payload.batch_number)).first()
+    if existing_batch:
+        raise HTTPException(status_code=409, detail="Batch number already exists. Use a new batch number.")
     recipe_version = session.get(RecipeVersion, payload.recipe_version_id) if payload.recipe_version_id else get_latest_recipe_version(session, recipe.id)
     if not recipe_version or recipe_version.status != "approved":
         raise HTTPException(status_code=409, detail="Batch must use an approved recipe version")
@@ -273,15 +306,82 @@ def list_batches(session: Session = Depends(get_session)) -> list[BatchOut]:
 @app.get("/batches/{batch_id}")
 def get_batch(batch_id: int, session: Session = Depends(get_session)) -> dict:
     batch = get_batch_or_404(session, batch_id)
+    recipe = get_recipe_or_404(session, batch.recipe_id)
     recipe_version = session.get(RecipeVersion, batch.recipe_version_id)
     materials = session.exec(select(MaterialLot).where(MaterialLot.batch_id == batch.id)).all()
     events = session.exec(select(BatchEvent).where(BatchEvent.batch_id == batch.id).order_by(BatchEvent.id)).all()
     return {
         "batch": BatchOut.model_validate(batch).model_dump(),
+        "recipe": RecipeOut.model_validate(recipe).model_dump(),
         "recipe_version": recipe_version_out(recipe_version).model_dump(),
         "materials": [MaterialOut.model_validate(material).model_dump() for material in materials],
         "events": [EventOut.model_validate(event).model_dump() for event in events],
     }
+
+
+@app.get("/batches/{batch_id}/ebr.pdf")
+def export_batch_pdf(batch_id: int, session: Session = Depends(get_session)) -> StreamingResponse:
+    payload = get_batch(batch_id, session)
+    batch_row = get_batch_or_404(session, batch_id)
+    anchor = session.exec(
+        select(BlockchainAnchor)
+        .where(BlockchainAnchor.entity_type == "batch")
+        .where(BlockchainAnchor.entity_id == batch_id)
+    ).first()
+    verification = verify_anchor(session, anchor) if anchor else None
+
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    y = height - 40
+
+    def line(text: str, step: int = 16) -> None:
+        nonlocal y
+        if y < 50:
+            pdf.showPage()
+            y = height - 40
+        pdf.drawString(40, y, text[:115])
+        y -= step
+
+    pdf.setTitle(f"Forge MES EBR {payload['batch']['batch_number']}")
+    pdf.setFont("Helvetica-Bold", 16)
+    line("Forge MES Electronic Batch Record", 22)
+    pdf.setFont("Helvetica", 10)
+    line(f"Batch number: {payload['batch']['batch_number']}")
+    line(f"Product: {payload['batch']['product_name']}")
+    line(f"Status: {payload['batch']['status']}")
+    line(f"Recipe version: {payload['recipe_version']['version']}")
+    line(f"Created at: {batch_row.created_at.isoformat()}")
+    line(f"Started at: {batch_row.started_at.isoformat() if batch_row.started_at else 'not started'}")
+    line(f"Completed at: {batch_row.completed_at.isoformat() if batch_row.completed_at else 'not completed'}")
+    line("")
+    line("Instructions", 18)
+    for step_item in payload["recipe_version"]["instructions"]:
+        line(f"Step {step_item['step']}: {step_item['title']} - {step_item['instruction']}")
+    line("")
+    line("Materials", 18)
+    for material in payload["materials"] or []:
+        line(f"{material['lot_number']} | {material['material_code']} | qty {material['quantity']} {material['unit']}")
+    line("")
+    line("Event log", 18)
+    for event in payload["events"]:
+        line(f"{event['created_at']} | {event['actor']} | {event['action']}")
+    line("")
+    line("Blockchain verification", 18)
+    if verification:
+        line(f"Verified: {verification['verified']}")
+        line(f"tx_id: {verification['tx_id']}")
+        line(f"Stored hash: {verification['stored_hash']}")
+        line(f"Recalculated hash: {verification['recalculated_hash']}")
+    else:
+        line("No anchor present for this batch record.")
+    pdf.save()
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=ebr-{payload['batch']['batch_number']}.pdf"},
+    )
 
 
 @app.post("/batches/{batch_id}/start", response_model=BatchOut)
@@ -314,6 +414,10 @@ async def complete_batch(batch_id: int, payload: BatchTransition, session: Sessi
     verify_signature(session, payload.signature.username, payload.signature.password)
     batch = get_batch_or_404(session, batch_id)
     ensure_batch_status(batch, {"in_progress"}, "completed")
+    recipe_version = session.get(RecipeVersion, batch.recipe_version_id)
+    expected_steps = len(recipe_version.instructions) if recipe_version and recipe_version.instructions else 0
+    if batch.current_step <= expected_steps:
+        raise HTTPException(status_code=409, detail="Complete all required batch steps before marking the batch complete.")
     batch.status = "completed"
     batch.completed_at = datetime.now(timezone.utc)
     session.add(batch)
@@ -343,6 +447,12 @@ async def create_event(payload: EventCreate, session: Session = Depends(get_sess
 
     batch = get_batch_or_404(session, payload.batch_id) if payload.batch_id else None
     if batch and payload.action == "step_completed":
+        if batch.status != "in_progress":
+            raise HTTPException(status_code=409, detail="Batch must be in progress before logging step completion.")
+        recipe_version = session.get(RecipeVersion, batch.recipe_version_id)
+        max_steps = len(recipe_version.instructions) if recipe_version and recipe_version.instructions else 0
+        if max_steps and batch.current_step > max_steps:
+            raise HTTPException(status_code=409, detail="All configured recipe steps have already been completed.")
         batch.current_step += 1
         if "actual_quantity" in payload.payload:
             batch.actual_quantity = payload.payload["actual_quantity"]
@@ -374,6 +484,13 @@ def get_batch_events(batch_id: int, session: Session = Depends(get_session)) -> 
 
 @app.post("/materials", response_model=MaterialOut)
 async def create_material(payload: MaterialCreate, session: Session = Depends(get_session)) -> MaterialOut:
+    existing = session.exec(select(MaterialLot).where(MaterialLot.lot_number == payload.lot_number)).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Lot number already exists. Use a new lot number for genealogy tracking.")
+    if payload.batch_id:
+        batch = get_batch_or_404(session, payload.batch_id)
+        if batch.status == "completed":
+            raise HTTPException(status_code=409, detail="Cannot record new material against a completed batch.")
     material = MaterialLot(
         material_code=payload.material_code,
         lot_number=payload.lot_number,
@@ -471,6 +588,15 @@ def list_drivers() -> list[dict]:
     return [driver_out(driver) for driver in driver_registry.list()]
 
 
+@app.get("/drivers/{driver_type}/tag-map")
+def get_driver_tag_map(driver_type: str) -> dict:
+    try:
+        driver = driver_registry.get(driver_type)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    return {"driver_type": driver.driver_type, "tag_map": driver.tag_map, "status": driver.status, "endpoint": driver.endpoint}
+
+
 @app.post("/drivers/{driver_type}/connect")
 def connect_driver(driver_type: str, payload: DriverConnect) -> dict:
     try:
@@ -516,16 +642,16 @@ def agent_assist(payload: AgentAssist, session: Session = Depends(get_session)) 
 
     equipment = list_equipment(session)
     drivers = list_drivers()
-    return generate_agent_response(
-        payload.prompt,
-        {
-            "batch": batch_data,
-            "events": events,
-            "anchor": anchor_data,
-            "equipment": [item.model_dump() for item in equipment],
-            "drivers": drivers,
-        },
-    )
+    context = {
+        "batch": batch_data,
+        "events": events,
+        "anchor": anchor_data,
+        "equipment": [item.model_dump() for item in equipment],
+        "drivers": drivers,
+    }
+    if payload.provider.lower() == "ollama":
+        return generate_ollama_response(payload.prompt, context)
+    return generate_agent_response(payload.prompt, context)
 
 
 @app.get("/equipment", response_model=list[EquipmentOut])

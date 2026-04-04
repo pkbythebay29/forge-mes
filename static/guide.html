@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forge MES Guide</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="layout guide-layout">
+    <section class="guide-header">
+      <p class="eyebrow">Forge MES Guide</p>
+      <h1 class="guide-title">Architecture, components, and blockchain verification</h1>
+      <div class="topbar">
+        <a class="nav-link" href="/">Back to Operator Workspace</a>
+        <a class="nav-link" href="/tag-mapping">Open Tag Mapping</a>
+      </div>
+    </section>
+
+    <section class="guide-grid">
+      <article class="card wide-card">
+        <h2>Architecture</h2>
+        <p>Forge MES is organized around a simple event-driven core:</p>
+        <p><code>Operator actions and APIs -> MES database -> immutable event log -> SHA-256 hashing -> blockchain anchor service -> verification API -> operator and agent workflows</code></p>
+        <p>The backend is FastAPI with SQLModel entities, a service layer for business rules, WebSocket updates for live audit and equipment state, and MCP-compatible agent endpoints. The frontend is a lightweight operator workspace focused on batch execution, traceability, and verification.</p>
+        <p>The key architectural boundary is that the blockchain layer does not own MES state. The database remains the source of truth, while the blockchain anchor layer independently proves whether critical records have changed.</p>
+      </article>
+
+      <article class="card">
+        <h2>Core Components</h2>
+        <p><strong>Batch management:</strong> create, start, execute, complete, and inspect batches.</p>
+        <p><strong>Recipe management:</strong> versioned recipes with approval and signatures.</p>
+        <p><strong>Electronic batch record:</strong> append-only events with timestamps, users, comments, and signatures.</p>
+        <p><strong>Material genealogy:</strong> lot relationships and batch linkage.</p>
+        <p><strong>Equipment and OEE:</strong> runtime, downtime, throughput, and quality tracking.</p>
+        <p><strong>Agent workflow:</strong> next-best actions derived from live MES context.</p>
+      </article>
+
+      <article class="card wide-card">
+        <h2>Blockchain Component</h2>
+        <p>The blockchain layer is a verification layer, not the main storage system. Forge stores the actual MES records in the database and anchors only a SHA-256 hash of the approved recipe version or completed batch record.</p>
+        <p><strong>What gets anchored:</strong> approved recipe versions and completed electronic batch records.</p>
+        <p><strong>What gets stored on the blockchain side:</strong> entity type, entity id, hash value, tx id, timestamp, and lightweight metadata.</p>
+        <p><strong>Where Forge stores the blockchain evidence:</strong> the MES keeps anchor evidence in its blockchain anchor table, alongside the batch and recipe tables, so verification can compare the current database record against the original anchored hash.</p>
+        <p><strong>Why this is immutable:</strong> the tx id and stored hash become the frozen reference point. If the underlying record changes, the recalculated hash diverges from the stored anchored hash and Forge reports the mismatch.</p>
+        <p><strong>Why this matters:</strong> if someone modifies the record after anchoring, the new hash no longer matches the stored anchor, so tampering becomes detectable.</p>
+        <p><strong>Extraction path:</strong> operators can inspect anchors through the verification API or export an eBR PDF that includes the tx id, stored hash, and verification result.</p>
+      </article>
+
+      <article class="card wide-card">
+        <h2>ALCOA++ Coverage</h2>
+        <p><strong>Attributable:</strong> user identity and electronic signature are attached to critical actions.</p>
+        <p><strong>Legible:</strong> every record is readable in the UI, API, and PDF export.</p>
+        <p><strong>Contemporaneous:</strong> events are timestamped at creation and appended immediately to the eBR.</p>
+        <p><strong>Original:</strong> event records are append-only, and completed records are hash-anchored.</p>
+        <p><strong>Accurate:</strong> verification recomputes the record hash to expose tampering.</p>
+        <p><strong>Complete:</strong> recipe, batch, genealogy, telemetry, and signatures are linked in one flow.</p>
+        <p><strong>Consistent:</strong> the service layer applies the same transitions and audit rules across APIs and UI.</p>
+        <p><strong>Enduring:</strong> the eBR persists in the database and can be exported to PDF.</p>
+        <p><strong>Available:</strong> REST, WebSocket, MCP, UI, and PDF export all expose the same evidence chain.</p>
+      </article>
+
+      <article class="card">
+        <h2>How to Verify</h2>
+        <p>1. Complete a batch.</p>
+        <p>2. Click <code>Verify Anchor</code> in the operator workspace.</p>
+        <p>3. Forge recalculates the current batch hash.</p>
+        <p>4. If the recalculated hash equals the stored anchored hash, the record verifies.</p>
+        <p>5. If they differ, Forge reports an integrity mismatch.</p>
+      </article>
+
+      <article class="card">
+        <h2>How to Extract Blockchain Evidence</h2>
+        <p>Use the batch PDF export to download the electronic batch record along with verification details including the transaction id and stored hash.</p>
+        <p>You can also call the verification endpoints directly:</p>
+        <p><code>GET /anchors</code></p>
+        <p><code>GET /anchors/batch/{id}</code></p>
+        <p><code>GET /batches/{id}/ebr.pdf</code></p>
+      </article>
+
+      <article class="card wide-card">
+        <h2>Industrial Connectivity</h2>
+        <p>Forge includes lightweight OPC UA and MQTT driver hooks so plant data can be connected without locking the platform to one vendor stack. These drivers are intentionally minimal to keep the architecture understandable and extensible.</p>
+        <p>In this demonstrator, a driver being marked <code>connected</code> means the endpoint configuration is active, the MES can accept tag mapping definitions for that protocol, and the runtime is ready to bind source values into batch or equipment fields.</p>
+        <p>See the separate tag-mapping page for example industrial source mappings.</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

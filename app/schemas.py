@@ -88,6 +88,7 @@ class DriverPublish(BaseModel):
 class AgentAssist(BaseModel):
     prompt: str = ""
     batch_id: Optional[int] = None
+    provider: str = "builtin"
 
 
 class VerificationOut(BaseModel):
