@@ -10,12 +10,17 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session, select
 
+from app.agent import generate_agent_response
 from app.db import get_session, init_db, session_scope
+from app.drivers import registry as driver_registry
 from app.models import Batch, BatchEvent, BlockchainAnchor, Equipment, MaterialLot, Recipe, RecipeVersion, User
 from app.schemas import (
+    AgentAssist,
     BatchCreate,
     BatchOut,
     BatchTransition,
+    DriverConnect,
+    DriverPublish,
     EquipmentOut,
     EquipmentTelemetry,
     EventCreate,
@@ -137,6 +142,21 @@ def recipe_version_out(version: RecipeVersion) -> RecipeVersionOut:
     )
 
 
+def driver_out(driver) -> dict:
+    return {
+        "driver_type": driver.driver_type,
+        "name": driver.name,
+        "endpoint": driver.endpoint,
+        "status": driver.status,
+        "protocol": driver.protocol,
+        "connected_at": driver.connected_at,
+        "last_error": driver.last_error,
+        "last_message": driver.last_message,
+        "capabilities": driver.capabilities,
+        "metadata": driver.metadata,
+    }
+
+
 @app.get("/")
 def operator_ui() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
@@ -145,6 +165,43 @@ def operator_ui() -> FileResponse:
 @app.get("/health")
 def healthcheck() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/market/compare")
+def market_compare() -> dict:
+    return {
+        "headline": "Forge MES is built as a transparent, agent-ready verification layer rather than a closed enterprise suite.",
+        "comparisons": [
+            {
+                "vendor": "Forge MES",
+                "positioning": "Open-source, minimal, agent-ready MES with explicit blockchain verification and lightweight drivers.",
+                "best_for": "Teams that want to understand, extend, and validate MES behavior directly.",
+                "difference": "Shows the audit chain, agent actions, and integrity proof in one operator-facing workflow.",
+            },
+            {
+                "vendor": "Siemens MES and trusted traceability",
+                "positioning": "Enterprise-scale traceability and manufacturing execution platform.",
+                "best_for": "Large organizations standardizing across complex operations.",
+                "difference": "Forge is intentionally smaller, easier to inspect, and more explicit about verification as code.",
+                "source": "https://www.siemens.com/en-us/solutions/manufacturing-execution-system-mes/",
+            },
+            {
+                "vendor": "Rockwell FactoryTalk PharmaSuite",
+                "positioning": "Life-sciences focused MES with strong electronic batch record workflows.",
+                "best_for": "Regulated plants that need deep packaged functionality and vendor support.",
+                "difference": "Forge trades packaged depth for openness, pluggability, and developer-friendly agent interfaces.",
+                "source": "https://www.rockwellautomation.com/en-ua/company/news/case-studies/biopharmaceutical-mes.html",
+            },
+            {
+                "vendor": "Tulip frontline platform",
+                "positioning": "Composable frontline operations apps with low-code workflows and AI emphasis.",
+                "best_for": "Teams that want fast app composition around shop-floor work.",
+                "difference": "Forge is more MES-specific, with stronger native emphasis on eBR integrity and blockchain-style proof.",
+                "source": "https://tulip.co/",
+            },
+        ],
+        "insight": "The market trend is toward composability, interoperability, and AI assistance. Forge pushes that trend further by making verification and agent behavior first-class product features.",
+    }
 
 
 @app.post("/recipes", response_model=RecipeVersionOut)
@@ -446,6 +503,68 @@ def tamper_batch_record(batch_id: int, session: Session = Depends(get_session)) 
     }
 
 
+@app.get("/drivers")
+def list_drivers() -> list[dict]:
+    return [driver_out(driver) for driver in driver_registry.list()]
+
+
+@app.post("/drivers/{driver_type}/connect")
+def connect_driver(driver_type: str, payload: DriverConnect) -> dict:
+    try:
+        driver = driver_registry.connect(driver_type, payload.endpoint)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    return driver_out(driver)
+
+
+@app.post("/drivers/{driver_type}/disconnect")
+def disconnect_driver(driver_type: str) -> dict:
+    try:
+        driver = driver_registry.disconnect(driver_type)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    return driver_out(driver)
+
+
+@app.post("/drivers/{driver_type}/publish")
+def publish_driver_message(driver_type: str, payload: DriverPublish) -> dict:
+    try:
+        driver = driver_registry.publish(driver_type, payload.topic, payload.payload)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    return driver_out(driver)
+
+
+@app.post("/agent/assist")
+def agent_assist(payload: AgentAssist, session: Session = Depends(get_session)) -> dict:
+    batch_data = None
+    events = []
+    anchor_data = None
+    if payload.batch_id:
+        batch = get_batch_or_404(session, payload.batch_id)
+        batch_data = BatchOut.model_validate(batch).model_dump()
+        events = [EventOut.model_validate(event).model_dump() for event in session.exec(select(BatchEvent).where(BatchEvent.batch_id == payload.batch_id).order_by(BatchEvent.id)).all()]
+        anchor = session.exec(
+            select(BlockchainAnchor)
+            .where(BlockchainAnchor.entity_type == "batch")
+            .where(BlockchainAnchor.entity_id == payload.batch_id)
+        ).first()
+        anchor_data = verify_anchor(session, anchor) if anchor else None
+
+    equipment = list_equipment(session)
+    drivers = list_drivers()
+    return generate_agent_response(
+        payload.prompt,
+        {
+            "batch": batch_data,
+            "events": events,
+            "anchor": anchor_data,
+            "equipment": [item.model_dump() for item in equipment],
+            "drivers": drivers,
+        },
+    )
+
+
 @app.get("/equipment", response_model=list[EquipmentOut])
 def list_equipment(session: Session = Depends(get_session)) -> list[EquipmentOut]:
     result = []
@@ -488,6 +607,8 @@ def mcp_tools() -> dict:
             {"name": "create_batch", "description": "Create a new manufacturing batch"},
             {"name": "start_batch", "description": "Start an existing batch with electronic signature"},
             {"name": "verify_anchor", "description": "Verify an anchored record against its blockchain hash"},
+            {"name": "agent_assist", "description": "Generate the next recommended MES actions from current context"},
+            {"name": "connect_driver", "description": "Connect an industrial protocol driver such as OPC UA or MQTT"},
             {"name": "log_event", "description": "Append an immutable MES event"},
             {"name": "record_material", "description": "Create a material lot or genealogy record"},
             {"name": "list_recipes", "description": "List recipe masters and latest versions"},
@@ -505,6 +626,10 @@ async def mcp_execute(tool_call: MCPToolCall, session: Session = Depends(get_ses
         return {"ok": True, "result": (await start_batch(args["batch_id"], BatchTransition(**args["payload"]), session)).model_dump()}
     if tool_call.tool == "verify_anchor":
         return {"ok": True, "result": verify_anchored_record(args["entity_type"], args["entity_id"], session).model_dump()}
+    if tool_call.tool == "agent_assist":
+        return {"ok": True, "result": agent_assist(AgentAssist(**args), session)}
+    if tool_call.tool == "connect_driver":
+        return {"ok": True, "result": connect_driver(args["driver_type"], DriverConnect(endpoint=args.get("endpoint")))}
     if tool_call.tool == "log_event":
         return {"ok": True, "result": (await create_event(EventCreate(**args), session)).model_dump()}
     if tool_call.tool == "record_material":

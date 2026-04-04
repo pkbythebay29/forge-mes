@@ -11,6 +11,8 @@ It demonstrates:
 - Equipment monitoring with simple OEE metrics
 - REST and WebSocket interfaces
 - MCP-compatible agent endpoints
+- AI-style operator copilot responses grounded in MES context
+- OPC UA and MQTT driver scaffolding for plant connectivity
 - Mock PLC simulation
 - Docker-first deployment
 
@@ -47,6 +49,8 @@ Guiding rules:
 - `app/main.py`: FastAPI app, REST routes, WebSockets, MCP endpoints
 - `app/models.py`: SQLModel domain entities
 - `app/services.py`: audit logging, OEE math, entity helpers
+- `app/agent.py`: deterministic agent-assist layer for next actions and integrity guidance
+- `app/drivers.py`: lightweight OPC UA and MQTT driver registry
 - `static/`: minimal operator UI
 - `scripts/plc_simulator.py`: mock PLC telemetry loop
 - `docker-compose.yml`: API, PostgreSQL, and simulator
@@ -90,6 +94,28 @@ Tamper demo:
 4. Verify again and observe `verified: false`
 
 This demonstrates that the MES can be independently verified instead of blindly trusted.
+
+## AI-Native UX
+
+The operator UI now emphasizes:
+
+- an AI copilot panel for next-best actions
+- visible blockchain verification status
+- industrial driver connection state
+- market comparison cards showing how Forge differs from packaged MES suites
+
+The agent layer does not invent hidden state. It responds from live MES context: batch status, event trail, anchor verification, equipment state, and driver connectivity.
+
+## Industrial Drivers
+
+Driver endpoints:
+
+- `GET /drivers`
+- `POST /drivers/opcua/connect`
+- `POST /drivers/mqtt/connect`
+- `POST /drivers/{driver_type}/publish`
+
+These drivers are intentionally lightweight and pluggable. They are designed to show where plant connectivity fits in the architecture without forcing the MES to depend on a single vendor stack.
 
 ## SQLite fallback
 

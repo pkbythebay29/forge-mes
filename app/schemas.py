@@ -76,6 +76,20 @@ class MCPToolCall(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
+class DriverConnect(BaseModel):
+    endpoint: Optional[str] = None
+
+
+class DriverPublish(BaseModel):
+    topic: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentAssist(BaseModel):
+    prompt: str = ""
+    batch_id: Optional[int] = None
+
+
 class VerificationOut(BaseModel):
     entity_type: str
     entity_id: int

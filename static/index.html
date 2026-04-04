@@ -8,45 +8,63 @@
 </head>
 <body>
   <main class="layout">
-    <section class="hero">
-      <div>
-        <p class="eyebrow">Verifiable MES</p>
-        <h1>Operator Console</h1>
-        <p class="subtle">Minimal batch execution with traceability, signatures, genealogy, and real-time event streaming.</p>
+    <section class="hero-panel">
+      <div class="hero-copy">
+        <p class="eyebrow">Agent-Ready Verifiable MES</p>
+        <h1>Operate with an AI copilot. Verify with blockchain anchors.</h1>
+        <p class="subtle">Forge MES combines operator execution, immutable event logging, industrial drivers, and record-level integrity verification in one workspace.</p>
+        <div class="hero-metrics">
+          <div class="metric-chip"><span>REST + WS</span><strong>Live</strong></div>
+          <div class="metric-chip"><span>Anchored Records</span><strong id="anchor-count">0</strong></div>
+          <div class="metric-chip"><span>Drivers</span><strong id="driver-count">2</strong></div>
+        </div>
       </div>
-      <div class="card compact">
-        <h2>Signature</h2>
+      <div class="card identity-card">
+        <h2>Electronic Signature</h2>
         <label>User <input id="sig-user" value="operator"></label>
         <label>Password <input id="sig-pass" value="operator123" type="password"></label>
+        <p class="tiny">Every critical action is attributable, timestamped, and verifiable.</p>
       </div>
     </section>
 
-    <section class="grid">
+    <section class="grid primary-grid">
+      <div class="card accent-card">
+        <h2>AI Operator Copilot</h2>
+        <label>Ask the agent <input id="agent-prompt" value="What should I do next on this batch?"></label>
+        <button id="ask-agent">Generate Guidance</button>
+        <div id="agent-answer" class="chat-panel"></div>
+        <div id="agent-actions" class="pill-row"></div>
+      </div>
+
       <div class="card">
-        <h2>Create Batch</h2>
+        <h2>Batch Control</h2>
         <label>Batch Number <input id="batch-number" value="B-1001"></label>
         <label>Recipe ID <input id="recipe-id" value="1" type="number"></label>
         <label>Product <input id="product-name" value="Demo Blend"></label>
         <label>Planned Qty <input id="planned-qty" value="100" type="number"></label>
         <button id="create-batch">Create Batch</button>
-      </div>
-
-      <div class="card">
-        <h2>Execute Batch</h2>
+        <hr>
         <label>Batch ID <input id="active-batch-id" value="1" type="number"></label>
         <div class="actions">
           <button id="refresh-batch">Load</button>
-          <button id="start-batch">Start Batch</button>
-          <button id="complete-batch">Complete Batch</button>
+          <button id="start-batch">Start</button>
+          <button id="complete-batch">Complete</button>
         </div>
-        <label>Step Title <input id="step-title" value="Mix"></label>
-        <label>Observed Value <input id="step-value" value="15"></label>
-        <button id="log-step">Log Step Completion</button>
-        <pre id="batch-details" class="code"></pre>
+        <button id="verify-batch">Verify Anchor</button>
+        <button id="tamper-batch" class="secondary">Run Tamper Demo</button>
+        <pre id="batch-details" class="code compact-code"></pre>
       </div>
 
       <div class="card">
-        <h2>Materials</h2>
+        <h2>Step Execution</h2>
+        <label>Step Title <input id="step-title" value="Mix"></label>
+        <label>Observed Value <input id="step-value" value="15"></label>
+        <button id="log-step">Log Step Completion</button>
+        <div id="instructions" class="instructions"></div>
+      </div>
+
+      <div class="card">
+        <h2>Material Genealogy</h2>
         <label>Material Code <input id="material-code" value="API-01"></label>
         <label>Lot Number <input id="lot-number" value="LOT-001"></label>
         <label>Quantity <input id="lot-qty" value="100" type="number"></label>
@@ -55,18 +73,32 @@
       </div>
 
       <div class="card">
-        <h2>Instructions</h2>
-        <div id="instructions" class="instructions"></div>
+        <h2>Industrial Drivers</h2>
+        <div id="drivers" class="driver-list"></div>
+        <div class="actions">
+          <button data-driver-connect="opcua">Connect OPC UA</button>
+          <button data-driver-connect="mqtt">Connect MQTT</button>
+        </div>
       </div>
 
       <div class="card">
-        <h2>Equipment</h2>
-        <pre id="equipment" class="code"></pre>
+        <h2>Equipment and OEE</h2>
+        <pre id="equipment" class="code compact-code"></pre>
       </div>
 
-      <div class="card">
+      <div class="card wide-card">
         <h2>Live Audit Trail</h2>
         <div id="events" class="events"></div>
+      </div>
+
+      <div class="card">
+        <h2>Blockchain Verification</h2>
+        <div id="verification" class="chat-panel"></div>
+      </div>
+
+      <div class="card wide-card market-card">
+        <h2>How Forge Compares to the MES Market</h2>
+        <div id="market-compare" class="compare-grid"></div>
       </div>
     </section>
   </main>

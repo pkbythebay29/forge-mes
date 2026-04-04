@@ -19,6 +19,10 @@ async function api(path, options = {}) {
   return response.json();
 }
 
+function renderPills(id, items = []) {
+  el(id).innerHTML = items.map((item) => `<div class="pill"><span>Suggested action</span><strong>${item}</strong></div>`).join("");
+}
+
 function pushEvent(entry) {
   const wrapper = document.createElement("div");
   wrapper.className = "event";
@@ -42,6 +46,36 @@ async function refreshEquipment() {
   el("equipment").textContent = JSON.stringify(equipment, null, 2);
 }
 
+async function refreshAnchors() {
+  const anchors = await api("/anchors");
+  el("anchor-count").textContent = anchors.length;
+}
+
+async function refreshDrivers() {
+  const drivers = await api("/drivers");
+  el("driver-count").textContent = drivers.length;
+  el("drivers").innerHTML = drivers.map((driver) => `
+    <div class="driver-item">
+      <strong>${driver.name}</strong><br>
+      ${driver.protocol} | ${driver.status}<br>
+      <code>${driver.endpoint}</code>
+    </div>
+  `).join("");
+}
+
+async function refreshMarketCompare() {
+  const market = await api("/market/compare");
+  el("market-compare").innerHTML = market.comparisons.map((item) => `
+    <div class="compare-item">
+      <strong>${item.vendor}</strong><br>
+      ${item.positioning}<br><br>
+      <em>Best for:</em> ${item.best_for}<br><br>
+      <em>Forge difference:</em> ${item.difference}
+      ${item.source ? `<br><br><a href="${item.source}" target="_blank" rel="noreferrer">Source</a>` : ""}
+    </div>
+  `).join("");
+}
+
 async function loadBatch() {
   const batchId = el("active-batch-id").value;
   const payload = await api(`/batches/${batchId}`);
@@ -49,6 +83,7 @@ async function loadBatch() {
   renderInstructions(payload.recipe_version.instructions);
   el("events").innerHTML = "";
   payload.events.slice().reverse().forEach(pushEvent);
+  await askAgent();
 }
 
 el("create-batch").onclick = async () => {
@@ -124,6 +159,53 @@ el("record-material").onclick = async () => {
   await loadBatch();
 };
 
+async function verifyBatch() {
+  const batchId = el("active-batch-id").value;
+  const verification = await api(`/anchors/batch/${batchId}`);
+  el("verification").innerHTML = `
+    <strong>${verification.verified ? "Anchor verified" : "Integrity mismatch detected"}</strong><br>
+    tx_id: ${verification.tx_id}<br>
+    stored_hash: <code>${verification.stored_hash}</code><br>
+    recalculated_hash: <code>${verification.recalculated_hash}</code>
+  `;
+  await refreshAnchors();
+}
+
+async function askAgent() {
+  const batchId = Number(el("active-batch-id").value);
+  const response = await api("/agent/assist", {
+    method: "POST",
+    body: JSON.stringify({
+      prompt: el("agent-prompt").value,
+      batch_id: Number.isNaN(batchId) ? null : batchId,
+    }),
+  });
+  el("agent-answer").innerHTML = `
+    <strong>${response.message}</strong><br><br>
+    ${response.reasoning.map((item) => `<div>${item}</div>`).join("")}
+  `;
+  renderPills("agent-actions", response.actions);
+}
+
+el("verify-batch").onclick = verifyBatch;
+el("ask-agent").onclick = askAgent;
+el("tamper-batch").onclick = async () => {
+  await api(`/demo/tamper/batches/${el("active-batch-id").value}`, { method: "POST" });
+  await loadBatch();
+  await verifyBatch();
+};
+
+document.querySelectorAll("[data-driver-connect]").forEach((button) => {
+  button.onclick = async () => {
+    await api(`/drivers/${button.dataset.driverConnect}/connect`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    await refreshDrivers();
+    await askAgent();
+  };
+});
+
 el("refresh-batch").onclick = loadBatch;
 
 const eventSocket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/events`);
@@ -136,4 +218,7 @@ const equipmentSocket = new WebSocket(`${location.protocol === "https:" ? "wss" 
 equipmentSocket.onmessage = () => refreshEquipment();
 
 refreshEquipment();
+refreshAnchors();
+refreshDrivers();
+refreshMarketCompare();
 loadBatch().catch(() => {});
